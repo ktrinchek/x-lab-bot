@@ -291,20 +291,51 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Главное меню с выбором раздела."""
+    keyboard = [
+        [InlineKeyboardButton("🔥 Практика", callback_data='menu_practice')],
+        [InlineKeyboardButton("📓 Дневник", callback_data='menu_diary')],
+        [InlineKeyboardButton("🛠️ Инструменты", callback_data='menu_tools')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("🧭 ГЛАВНОЕ МЕНЮ X_LAB\n\nВыбери раздел:", reply_markup=reply_markup)
+
+async def menu_practice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Подменю: Практика."""
     keyboard = [
         [InlineKeyboardButton("☀️ Задание дня", callback_data='today')],
         [InlineKeyboardButton("✅ Отметить выполнение", callback_data='done')],
         [InlineKeyboardButton("📊 Прогресс", callback_data='progress')],
-        [InlineKeyboardButton("✍️ Новая заметка", callback_data='note')],
-        [InlineKeyboardButton("📅 Сводка за неделю", callback_data='week')],
         [InlineKeyboardButton("🎲 Чит-код", callback_data='code')],
-        [InlineKeyboardButton("🌑 Вопрос Тени", callback_data='shadow')],
         [InlineKeyboardButton("🌬️ Дыхание", callback_data='breathe')],
-        [InlineKeyboardButton("💭 Вдохновение", callback_data='inspire')],
-        [InlineKeyboardButton("⚓️ Якорь", callback_data='anchor')],
+        [InlineKeyboardButton("◀️ Назад в меню", callback_data='menu_back')],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("🧭 ВЫБЕРИ ДЕЙСТВИЕ:", reply_markup=reply_markup)
+    await update.callback_query.edit_message_text("🔥 ПРАКТИКА\n\nВыбери действие:", reply_markup=reply_markup)
+
+async def menu_diary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Подменю: Дневник."""
+    keyboard = [
+        [InlineKeyboardButton("✍️ Новая заметка", callback_data='note')],
+        [InlineKeyboardButton("🌙 Записать сон", callback_data='dream')],
+        [InlineKeyboardButton("🔮 Записать синхронию", callback_data='sync')],
+        [InlineKeyboardButton("🌑 Вопрос Тени", callback_data='shadow')],
+        [InlineKeyboardButton("📅 Сводка за неделю", callback_data='week')],
+        [InlineKeyboardButton("◀️ Назад в меню", callback_data='menu_back')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.edit_message_text("📓 ДНЕВНИК\n\nВыбери действие:", reply_markup=reply_markup)
+
+async def menu_tools(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Подменю: Инструменты."""
+    keyboard = [
+        [InlineKeyboardButton("💭 Вдохновение", callback_data='inspire')],
+        [InlineKeyboardButton("⚓️ Якорь", callback_data='anchor')],
+        [InlineKeyboardButton("🔄 Сбросить прогресс", callback_data='reset_menu')],
+        [InlineKeyboardButton("◀️ Назад в меню", callback_data='menu_back')],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.callback_query.edit_message_text("🛠️ ИНСТРУМЕНТЫ\n\nВыбери действие:", reply_markup=reply_markup)
 
 async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = load_user_data()
@@ -439,29 +470,47 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    msg = query.message
     
-    if data == 'today':
-        await today(msg, context)
+    # Навигация по меню
+    if data == 'menu_practice':
+        await menu_practice(update, context)
+    elif data == 'menu_diary':
+        await menu_diary(update, context)
+    elif data == 'menu_tools':
+        await menu_tools(update, context)
+    elif data == 'menu_back':
+        await menu(query, context)
+    
+    # Основные действия
+    elif data == 'today':
+        await today(query, context)
     elif data == 'done':
-        await done(msg, context)
+        await done(query, context)
     elif data == 'progress':
-        await progress(msg, context)
+        await progress(query, context)
     elif data == 'note':
-        await msg.reply_text("📝 Отправь текстом, голосом или фото. Я сохраню.")
+        await query.message.reply_text("📝 Отправь текстом, голосом или фото. Я сохраню.")
         context.user_data['awaiting_note'] = True
     elif data == 'week':
-        await week(msg, context)
+        await week(query, context)
     elif data == 'code':
-        await code(msg, context)
+        await code(query, context)
     elif data == 'shadow':
-        await shadow(msg, context)
+        await shadow(query, context)
+    elif data == 'dream':
+        await query.message.reply_text("🌙 Опиши свой сон. Детали, ощущения, странности.")
+        context.user_data['awaiting_dream'] = True
+    elif data == 'sync':
+        await query.message.reply_text("🔮 Опиши синхронию. Странное совпадение, знак.")
+        context.user_data['awaiting_sync'] = True
     elif data == 'breathe':
-        await breathe(msg, context)
+        await breathe(query, context)
     elif data == 'inspire':
-        await inspire(msg, context)
+        await inspire(query, context)
     elif data == 'anchor':
-        await anchor(msg, context)
+        await anchor(query, context)
+    elif data == 'reset_menu':
+        await reset(query, context)
 
 def main():
     app = Application.builder().token(TOKEN).build()

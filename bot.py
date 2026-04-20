@@ -10,7 +10,7 @@ import json
 
 # ===== НАСТРОЙКИ =====
 TOKEN = os.environ.get("TOKEN", "7533119660:AAHymK3kK8BvIKWsgeBYz0p44kwzy8gX-hc")
-NOTES_FILE = "notes.json"
+NOTES_FILE = "/opt/render/project/src/notes.json"
 
 # ===== ЛОГИ =====
 logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
@@ -22,8 +22,8 @@ def load_notes():
         if os.path.exists(NOTES_FILE):
             with open(NOTES_FILE, 'r', encoding='utf-8') as f:
                 return json.load(f)
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Ошибка загрузки заметок: {e}")
     return []
 
 def save_note(text):
@@ -35,8 +35,8 @@ def save_note(text):
     try:
         with open(NOTES_FILE, 'w', encoding='utf-8') as f:
             json.dump(notes, f, ensure_ascii=False, indent=2)
-    except:
-        pass
+    except Exception as e:
+        logger.error(f"Ошибка сохранения заметки: {e}")
 
 # ===== КОМАНДЫ =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):

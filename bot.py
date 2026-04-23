@@ -1,23 +1,51 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import logging
 import os
+import logging
 import random
-from datetime import datetime, date, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+import asyncio
+from datetime import datetime, date
 import json
 
+# Библиотеки для веб-сервера
+from starlette.applications import Starlette
+from starlette.responses import Response, PlainTextResponse
+from starlette.requests import Request
+from starlette.routing import Route
+import uvicorn
+
+# Библиотеки для Telegram
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+)
+
 # ===== НАСТРОЙКИ =====
-TOKEN = os.environ.get("TOKEN", "7533119660:AAHymK3kK8BvIKWsgeBYz0p44kwzy8gX-hc")
+TOKEN = os.environ.get("TOKEN")
+if not TOKEN:
+    raise ValueError("Переменная окружения TOKEN не установлена!")
+
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
+if not RENDER_EXTERNAL_URL:
+    raise ValueError("Переменная окружения RENDER_EXTERNAL_URL не установлена!")
+
+PORT = int(os.environ.get("PORT", 10000))
+
 DATA_FILE = "/opt/render/project/src/user_data.json"
 NOTES_FILE = "/opt/render/project/src/notes.json"
 DREAMS_FILE = "/opt/render/project/src/dreams.json"
 SYNC_FILE = "/opt/render/project/src/syncs.json"
 
 # ===== ЛОГИ =====
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
 # ===== 40 ЗАДАНИЙ (первые 7) =====
@@ -155,7 +183,7 @@ CODES = [
     {"code": "Я — магнит для хороших людей и событий", "desc": "Притяжение возможностей. Твоё поле привлекает то, что резонирует."},
     {"code": "Я действую из лёгкости, и всё складывается", "desc": "Снятие напряжения с результата. Лёгкость — не лень, а доверие."},
     {"code": "Я в безопасности, я доверяю миру", "desc": "Базовое спокойствие. Мир не враг. Можно выдохнуть."},
-    {"code": "832523295", "desc": "Числовой код Грабового. Лёгкие деньги, неожиданные поступления. Позволь потоку принести."},
+    {"code": "832523295", "desc": "Числовой код Грабового. Лёгкие деньги, неожиданные поступления."},
     {"code": "888 412 1289018", "desc": "Числовой код Грабового. Магнит для любви. Открой сердце."},
     {"code": "9187948181", "desc": "Числовой код Грабового. Исцеление тела, восстановление энергии."},
     {"code": "817219738", "desc": "Числовой код Грабового. Колесо фортуны, удача, благоприятные совпадения."},
@@ -164,31 +192,26 @@ CODES = [
 
 # ===== ВОПРОСЫ ДЛЯ /shadow (25) =====
 SHADOW_QUESTIONS = [
-    # Блок 1: Контроль и страх "глупости"
     "Что страшнее: быть уличенной в некомпетентности или быть незамеченной вовсе?",
     "Какую книгу/фильм ты НЕ досмотрела, но в разговоре делаешь вид, что знаешь?",
     "Кого ты считаешь «поверхностным» в своём окружении? А в чём ты сама поверхностна?",
     "Когда ты в последний раз притворялась, что тебе интересно, хотя внутри было пусто?",
     "Какую свою «глупую» радость ты скрываешь от других?",
-    # Блок 2: Мужчины, выбор и тело
     "Какое качество в мужчине тебя необъяснимо притягивает, даже если умом ты его не одобряешь?",
     "Ты боишься, что выбираешь «не тех», или боишься, что «те» тебя не выберут?",
     "Когда ты чувствуешь своё тело как помеху, а не как союзника?",
     "Что бы ты сделала на свидании, если бы точно знала, что тебя не осудят?",
     "Если бы все твои бывшие собрались в одной комнате, что бы ты хотела, чтобы они поняли о тебе?",
-    # Блок 3: Творчество и недоделки
     "Что ты скажешь себе, когда наконец доделаешь ту самую «недоделку»? (А если не доделаешь — что тогда?)",
     "Чьё мнение о твоём творчестве тебя парализует больше всего?",
     "Что ты почувствуешь, если твоя работа окажется «средней»?",
     "Ты больше боишься провала или успеха, после которого придётся соответствовать?",
     "Какую свою идею ты похоронила со словами «это уже было» или «это банально»?",
-    # Блок 4: Одиночество, свобода и правда
     "Что ты чувствуешь, когда остаёшься одна в тишине без цели?",
     "От какой своей черты ты бы отказалась, если бы могла? А от какой — ни за что?",
     "Кому ты завидуешь по-чёрному, до жжения в груди?",
     "Если бы тебе осталось жить год, какое единственное правило ты бы выбросила из своей жизни первым?",
     "Что ты осуждаешь в других женщинах, но тайно позволяешь себе?",
-    # Блок 5: От аналитика
     "Что произойдёт, если ты однажды посмотришь фильм и просто скажешь: «Мне понравилось», — без анализа?",
     "Что ты почувствуешь, когда поймёшь, что инструкции кончились и дальше — только твой голос?",
     "Ты создаёшь бота, пишешь коды. Где в этом процессе твоё тело? Что оно делает прямо сейчас?",
@@ -205,7 +228,7 @@ BREATHE = [
     "🌬️ ВЫДОХ ВДВОЕ ДЛИННЕЕ\nВдох на 3 счёта.\nВыдох на 6.\nБез задержек.\n2 минуты.",
 ]
 
-# ===== ЦИТАТЫ ДЛЯ /inspire =====
+# ===== ЦИТАТЫ =====
 QUOTES = [
     "«Пока вы не сделаете бессознательное сознательным, оно будет управлять вашей жизнью, и вы назовёте это судьбой.» — Карл Юнг",
     "«Творчество — это не соревнование. Творчество — это дыхание.» — Джулия Кэмерон",
@@ -291,7 +314,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Главное меню с выбором раздела."""
     keyboard = [
         [InlineKeyboardButton("🔥 Практика", callback_data='menu_practice')],
         [InlineKeyboardButton("📓 Дневник", callback_data='menu_diary')],
@@ -301,7 +323,6 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🧭 ГЛАВНОЕ МЕНЮ X_LAB\n\nВыбери раздел:", reply_markup=reply_markup)
 
 async def menu_practice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подменю: Практика."""
     keyboard = [
         [InlineKeyboardButton("☀️ Задание дня", callback_data='today')],
         [InlineKeyboardButton("✅ Отметить выполнение", callback_data='done')],
@@ -314,7 +335,6 @@ async def menu_practice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.edit_message_text("🔥 ПРАКТИКА\n\nВыбери действие:", reply_markup=reply_markup)
 
 async def menu_diary(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подменю: Дневник."""
     keyboard = [
         [InlineKeyboardButton("✍️ Новая заметка", callback_data='note')],
         [InlineKeyboardButton("🌙 Записать сон", callback_data='dream')],
@@ -327,7 +347,6 @@ async def menu_diary(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.callback_query.edit_message_text("📓 ДНЕВНИК\n\nВыбери действие:", reply_markup=reply_markup)
 
 async def menu_tools(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Подменю: Инструменты."""
     keyboard = [
         [InlineKeyboardButton("💭 Вдохновение", callback_data='inspire')],
         [InlineKeyboardButton("⚓️ Якорь", callback_data='anchor')],
@@ -406,7 +425,7 @@ async def code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def shadow(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = random.choice(SHADOW_QUESTIONS)
-    await update.message.reply_text(f"🌑 ВОПРОС ТЕНИ:\n\n{q}\n\nОтветь честно. Можно одним предложением. Это только для тебя.")
+    await update.message.reply_text(f"🌑 ВОПРОС ТЕНИ:\n\n{q}\n\nОтветь честно. Это только для тебя.")
     context.user_data['awaiting_shadow'] = True
     context.user_data['shadow_question'] = q
 
@@ -439,15 +458,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
     if not msg:
         return
-    
-    text = msg.text or ""
+
     if msg.photo:
         content = "[Фото]"
     elif msg.voice:
         content = "[Голосовое]"
     else:
-        content = text[:500] if text else "[Медиа]"
-    
+        content = msg.text[:500] if msg.text else "[Медиа]"
+
     if context.user_data.get('awaiting_note'):
         save_note(content)
         context.user_data['awaiting_note'] = False
@@ -456,7 +474,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         q = context.user_data.get('shadow_question', '')
         save_note(f"🌑 Тень: {q} → {content}")
         context.user_data['awaiting_shadow'] = False
-        await msg.reply_text("🌑 Ответ сохранён. Спасибо за честность.")
+        await msg.reply_text("🌑 Ответ сохранён.")
     elif context.user_data.get('awaiting_dream'):
         save_dream(content)
         context.user_data['awaiting_dream'] = False
@@ -470,8 +488,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    
-    # Навигация по меню
+
     if data == 'menu_practice':
         await menu_practice(update, context)
     elif data == 'menu_diary':
@@ -479,9 +496,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'menu_tools':
         await menu_tools(update, context)
     elif data == 'menu_back':
-        await menu(query, context)
-    
-    # Основные действия
+        keyboard = [
+            [InlineKeyboardButton("🔥 Практика", callback_data='menu_practice')],
+            [InlineKeyboardButton("📓 Дневник", callback_data='menu_diary')],
+            [InlineKeyboardButton("🛠️ Инструменты", callback_data='menu_tools')],
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("🧭 ГЛАВНОЕ МЕНЮ X_LAB\n\nВыбери раздел:", reply_markup=reply_markup)
     elif data == 'today':
         await today(query, context)
     elif data == 'done':
@@ -498,10 +519,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'shadow':
         await shadow(query, context)
     elif data == 'dream':
-        await query.message.reply_text("🌙 Опиши свой сон. Детали, ощущения, странности.")
+        await query.message.reply_text("🌙 Опиши свой сон.")
         context.user_data['awaiting_dream'] = True
     elif data == 'sync':
-        await query.message.reply_text("🔮 Опиши синхронию. Странное совпадение, знак.")
+        await query.message.reply_text("🔮 Опиши синхронию.")
         context.user_data['awaiting_sync'] = True
     elif data == 'breathe':
         await breathe(query, context)
@@ -512,29 +533,58 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == 'reset_menu':
         await reset(query, context)
 
-def main():
-    app = Application.builder().token(TOKEN).build()
-    
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("menu", menu))
-    app.add_handler(CommandHandler("today", today))
-    app.add_handler(CommandHandler("done", done))
-    app.add_handler(CommandHandler("progress", progress))
-    app.add_handler(CommandHandler("note", note_command))
-    app.add_handler(CommandHandler("week", week))
-    app.add_handler(CommandHandler("code", code))
-    app.add_handler(CommandHandler("shadow", shadow))
-    app.add_handler(CommandHandler("dream", dream))
-    app.add_handler(CommandHandler("sync", sync_command))
-    app.add_handler(CommandHandler("breathe", breathe))
-    app.add_handler(CommandHandler("inspire", inspire))
-    app.add_handler(CommandHandler("anchor", anchor))
-    app.add_handler(CommandHandler("reset", reset))
-    app.add_handler(CallbackQueryHandler(button_handler))
-    app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.VOICE, handle_message))
-    
-    logger.info("✅ X_Lab v2.0 запущен")
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+# ===== ЗАПУСК С WEBHOOK =====
+async def main():
+    application = Application.builder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("menu", menu))
+    application.add_handler(CommandHandler("today", today))
+    application.add_handler(CommandHandler("done", done))
+    application.add_handler(CommandHandler("progress", progress))
+    application.add_handler(CommandHandler("note", note_command))
+    application.add_handler(CommandHandler("week", week))
+    application.add_handler(CommandHandler("code", code))
+    application.add_handler(CommandHandler("shadow", shadow))
+    application.add_handler(CommandHandler("dream", dream))
+    application.add_handler(CommandHandler("sync", sync_command))
+    application.add_handler(CommandHandler("breathe", breathe))
+    application.add_handler(CommandHandler("inspire", inspire))
+    application.add_handler(CommandHandler("anchor", anchor))
+    application.add_handler(CommandHandler("reset", reset))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(MessageHandler(filters.TEXT | filters.PHOTO | filters.VOICE, handle_message))
+
+    webhook_url = f"{RENDER_EXTERNAL_URL}/telegram"
+    logger.info(f"Устанавливаю webhook на URL: {webhook_url}")
+    await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
+
+    async def telegram_webhook(request: Request):
+        try:
+            data = await request.json()
+            await application.update_queue.put(Update.de_json(data, application.bot))
+            return Response()
+        except Exception as e:
+            logger.error(f"Ошибка webhook: {e}")
+            return Response(status_code=500)
+
+    async def health_check(request: Request):
+        return PlainTextResponse("OK")
+
+    routes = [
+        Route("/telegram", telegram_webhook, methods=["POST"]),
+        Route("/healthcheck", health_check, methods=["GET"]),
+    ]
+    starlette_app = Starlette(routes=routes)
+
+    config = uvicorn.Config(starlette_app, host="0.0.0.0", port=PORT, log_level="info")
+    server = uvicorn.Server(config)
+
+    logger.info("🚀 Запуск X_Lab с Webhook...")
+    async with application:
+        await application.start()
+        await server.serve()
+        await application.stop()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
